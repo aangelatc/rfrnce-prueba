@@ -45,6 +45,23 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
+async function getOptionalUserId(req: Request) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const authorization = req.headers.get("Authorization");
+
+  if (!supabaseUrl || !anonKey || !authorization) return null;
+
+  const supabase = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authorization } },
+  });
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  return user?.id ?? null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -87,10 +104,13 @@ serve(async (req) => {
       ].join("\n")
     );
 
+    const userId = await getOptionalUserId(req);
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("creative_references")
       .insert({
+        source: "uploaded",
+        user_id: userId,
         title,
         type,
         url: url || null,

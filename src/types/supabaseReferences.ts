@@ -1,5 +1,8 @@
 export interface SupabaseReference {
   id: string;
+  source?: "uploaded" | "default";
+  default_reference_id?: string | null;
+  user_id?: string | null;
   title: string;
   type: string;
   url: string | null;

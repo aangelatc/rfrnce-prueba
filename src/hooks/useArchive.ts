@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { legacyReferenceKeyMap } from "../data/references";
 
 export interface Collection {
   id: string;
@@ -25,11 +26,21 @@ function loadState(): State {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as State;
+      const migratedSavedRefs = parsed.savedRefs.reduce<SavedRef[]>((savedRefs, savedRef) => {
+        const refKey = legacyReferenceKeyMap.get(savedRef.refKey) ?? savedRef.refKey;
+
+        if (savedRefs.some((reference) => reference.refKey === refKey)) return savedRefs;
+
+        savedRefs.push({ ...savedRef, refKey });
+        return savedRefs;
+      }, []);
+
       // Ensure default collection always exists
       if (!parsed.collections.find((c) => c.id === UNCATEGORIZED_ID)) {
         parsed.collections.unshift(UNCATEGORIZED);
       }
-      return parsed;
+
+      return { ...parsed, savedRefs: migratedSavedRefs };
     }
   } catch {}
   return { collections: [UNCATEGORIZED], savedRefs: [] };

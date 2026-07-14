@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { getReferenceKey } from "../data/references";
 import type { ReferenceCard } from "../data/references";
 import type { Collection, SavedRef } from "../hooks/useArchive";
 import { UNCATEGORIZED_ID } from "../hooks/useArchive";
@@ -95,7 +96,7 @@ export function ArchivePanel({
     setRenamingId(null);
   };
 
-  const getRef = (key: string) => allRefs.find((r) => r.title === key);
+  const getRef = (key: string) => allRefs.find((reference) => getReferenceKey(reference) === key);
 
   return (
     <>
@@ -314,7 +315,7 @@ export function ArchivePanel({
                               </p>
                               {ref.kind === "text" && (
                                 <p className="text-[11px] text-rfrnce-gray truncate mt-0.5">
-                                  {ref.source}
+                                  {ref.sourceLabel}
                                 </p>
                               )}
                               <div className="flex items-center gap-3 mt-2">

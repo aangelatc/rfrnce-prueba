@@ -14,14 +14,23 @@ type FormState = {
 
 type ConnectionReference = {
   id: string;
+  source: "uploaded" | "default" | "demo";
   title: string;
   type: string;
   url?: string | null;
+  imageUrl?: string | null;
   description?: string | null;
   ai_summary?: string | null;
+  mood?: string | null;
   style?: string | null;
   tags?: string[] | null;
+  collection?: string | null;
+  date?: string | null;
 };
+
+interface SupabaseReferenceManagerProps {
+  savedReferences?: ReferenceCard[];
+}
 
 const initialForm: FormState = {
   title: "",
@@ -134,27 +143,36 @@ function getReferenceKeywordText(reference: ConnectionReference, includeTags = t
     .join(" ");
 }
 
-function createStableId(title: string) {
-  return `generic-${normalizeKeyword(title)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")}`;
-}
-
 function normalizeGenericReference(reference: ReferenceCard): ConnectionReference {
   const description =
     reference.kind === "text"
-      ? `${reference.quote} ${reference.source}`
+      ? `${reference.quote} ${reference.sourceLabel}`
       : reference.description;
 
   return {
-    id: createStableId(reference.title),
+    id: reference.id,
+    source: reference.source,
     title: reference.title,
     type: reference.type,
-    url: null,
+    url: reference.kind === "image" ? reference.image : null,
+    imageUrl: reference.kind === "image" ? reference.image : null,
     description,
     ai_summary: description,
+    mood: null,
     style: reference.collection,
     tags: reference.tags,
+    collection: reference.collection,
+    date: reference.date,
+  };
+}
+
+function normalizeUploadedReference(reference: SupabaseReference): ConnectionReference {
+  return {
+    ...reference,
+    source: "uploaded",
+    imageUrl: reference.type.toLowerCase() === "imagen" ? reference.url : null,
+    collection: null,
+    date: reference.created_at,
   };
 }
 
@@ -195,12 +213,15 @@ function getFunctionUrl(functionName: string) {
   return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`;
 }
 
-function getAuthHeaders() {
+async function getAuthHeaders() {
   const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${anonKey}`,
+    Authorization: `Bearer ${session?.access_token ?? anonKey}`,
   };
 }
 
@@ -217,7 +238,9 @@ function ReferenceMeta({ label, value }: { label: string; value: string | null }
   );
 }
 
-export function SupabaseReferenceManager() {
+export function SupabaseReferenceManager({
+  savedReferences = [],
+}: SupabaseReferenceManagerProps) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [references, setReferences] = useState<SupabaseReference[]>([]);
   const [connectionsByReference, setConnectionsByReference] = useState<Record<string, string[]>>(
@@ -234,13 +257,27 @@ export function SupabaseReferenceManager() {
     [form.description, form.title, form.type]
   );
 
+  const savedConnectionReferences = useMemo(
+    () => savedReferences.map((reference) => normalizeGenericReference(reference)),
+    [savedReferences]
+  );
+
   const allConnectionReferences = useMemo(
     () =>
       dedupeConnectionReferences([
-        ...references,
+        ...references.map((reference) => normalizeUploadedReference(reference)),
         ...archiveRefs.map((reference) => normalizeGenericReference(reference)),
       ]),
     [references]
+  );
+
+  const displayedReferences = useMemo(
+    () =>
+      dedupeConnectionReferences([
+        ...references.map((reference) => normalizeUploadedReference(reference)),
+        ...savedConnectionReferences,
+      ]),
+    [references, savedConnectionReferences]
   );
 
   const loadReferences = async () => {
@@ -284,7 +321,7 @@ export function SupabaseReferenceManager() {
     try {
       const response = await fetch(getFunctionUrl("create-reference"), {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           title: form.title.trim(),
           type: form.type.trim(),
@@ -518,7 +555,7 @@ export function SupabaseReferenceManager() {
         <div className="max-h-[760px] overflow-y-auto">
           {loadingReferences ? (
             <p className="px-6 py-10 text-[14px] text-rfrnce-gray">Cargando referencias...</p>
-          ) : references.length === 0 ? (
+          ) : displayedReferences.length === 0 ? (
             <div className="px-6 py-10">
               <p
                 className="text-[19px] text-rfrnce-gray"
@@ -532,16 +569,35 @@ export function SupabaseReferenceManager() {
             </div>
           ) : (
             <div className="divide-y divide-rfrnce-black/10">
-              {references.map((reference) => {
+              {displayedReferences.map((reference) => {
                 const connections = connectionsByReference[reference.id] ?? [];
+                const sourceLabel =
+                  reference.source === "uploaded"
+                    ? "Subida"
+                    : reference.source === "default"
+                      ? "Predeterminada guardada"
+                      : "Demo guardada";
 
                 return (
                   <article key={reference.id} className="px-6 py-6">
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div>
+                      <div className="flex gap-4">
+                        {reference.imageUrl && (
+                          <div className="h-20 w-20 flex-none overflow-hidden border border-rfrnce-black/10 bg-rfrnce-offwhite">
+                            <img
+                              src={reference.imageUrl}
+                              alt={reference.title}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        )}
+                        <div>
                         <div className="flex flex-wrap items-center gap-2 mb-3">
                           <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-lime bg-rfrnce-black px-[10px] py-1 rounded-sm">
                             {reference.type}
+                          </span>
+                          <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
+                            {sourceLabel}
                           </span>
                           {reference.mood && (
                             <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
@@ -570,6 +626,7 @@ export function SupabaseReferenceManager() {
                             {reference.url}
                           </a>
                         )}
+                        </div>
                       </div>
 
                       <div className="flex-none md:max-w-[320px]">
@@ -604,8 +661,8 @@ export function SupabaseReferenceManager() {
                     </div>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
-                      <ReferenceMeta label="Resumen IA" value={reference.ai_summary} />
-                      <ReferenceMeta label="Estilo" value={reference.style} />
+                      <ReferenceMeta label="Resumen IA" value={reference.ai_summary ?? null} />
+                      <ReferenceMeta label="Estilo" value={reference.style ?? null} />
                     </div>
 
                     {reference.tags && reference.tags.length > 0 && (

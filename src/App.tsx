@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { archiveRefs } from "./data/references";
+import { archiveRefs, getReferenceKey } from "./data/references";
 import { useArchive } from "./hooks/useArchive";
 import { ArchivePanel } from "./components/ArchivePanel";
 import { SupabaseReferenceManager } from "./components/SupabaseReferenceManager";
 import type { ReferenceCard } from "./data/references";
+import { removeDefaultReference, saveDefaultReference } from "./lib/defaultReferenceCollection";
 
 const features = [
   {
@@ -41,12 +42,14 @@ function RefCard({
   card,
   isSaved,
   collectionName,
+  isBusy,
   onSave,
   onRemove,
 }: {
   card: ReferenceCard;
   isSaved: boolean;
   collectionName: string;
+  isBusy: boolean;
   onSave: () => void;
   onRemove: () => void;
 }) {
@@ -61,17 +64,22 @@ function RefCard({
           </span>
           <button
             onClick={onRemove}
+            disabled={isBusy}
+            aria-label={`Quitar ${ref.title} de mi archivo`}
             className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rfrnce-gray hover:text-rfrnce-black transition-colors"
           >
-            Quitar
+            {isBusy ? "Quitando..." : "Quitar"}
           </button>
         </div>
       ) : (
         <button
           onClick={onSave}
-          className="w-full text-[12px] font-semibold uppercase tracking-[0.14em] text-rfrnce-gray border border-rfrnce-black/20 px-3 py-[6px] rounded-sm hover:border-rfrnce-black/40 hover:text-rfrnce-black transition-colors"
+          disabled={isBusy}
+          aria-pressed={isSaved}
+          aria-label={`Guardar ${ref.title} en mi archivo`}
+          className="w-full text-[12px] font-semibold uppercase tracking-[0.14em] text-rfrnce-gray border border-rfrnce-black/20 px-3 py-[6px] rounded-sm hover:border-rfrnce-black/40 hover:text-rfrnce-black transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Guardar en archivo
+          {isBusy ? "Guardando..." : "Guardar en archivo"}
         </button>
       )}
     </div>
@@ -150,7 +158,7 @@ function RefCard({
         >
           "{ref.quote}"
         </p>
-        <p className="text-[13px] text-rfrnce-gray font-semibold">{ref.source}</p>
+        <p className="text-[13px] text-rfrnce-gray font-semibold">{ref.sourceLabel}</p>
       </div>
       <div className="flex flex-wrap gap-2 mb-1">
         {ref.tags.map((tag) => (
@@ -183,8 +191,14 @@ function App() {
   const [email, setEmail] = useState("");
   const [formStatus, setFormStatus] = useState<"idle" | "success" | "error">("idle");
   const [panelOpen, setPanelOpen] = useState(false);
+  const [archiveStatus, setArchiveStatus] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [pendingRefId, setPendingRefId] = useState<string | null>(null);
 
   const archive = useArchive();
+  const savedArchiveRefs = archive.savedRefs
+    .map((savedRef) => archiveRefs.find((reference) => getReferenceKey(reference) === savedRef.refKey))
+    .filter((reference): reference is ReferenceCard => Boolean(reference));
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -193,6 +207,50 @@ function App() {
       return;
     }
     setFormStatus("success");
+  };
+
+  const handleSaveReference = async (reference: ReferenceCard) => {
+    const refKey = getReferenceKey(reference);
+
+    setPendingRefId(refKey);
+    setArchiveStatus(null);
+    setArchiveError(null);
+
+    try {
+      if (reference.source === "default") {
+        await saveDefaultReference(reference.id);
+      }
+
+      archive.saveRef(refKey);
+      setArchiveStatus("Referencia guardada en tu archivo.");
+    } catch (error) {
+      setArchiveError(
+        error instanceof Error ? error.message : "No se pudo guardar la referencia."
+      );
+    } finally {
+      setPendingRefId(null);
+    }
+  };
+
+  const handleRemoveReference = async (reference: ReferenceCard) => {
+    const refKey = getReferenceKey(reference);
+
+    setPendingRefId(refKey);
+    setArchiveStatus(null);
+    setArchiveError(null);
+
+    try {
+      if (reference.source === "default") {
+        await removeDefaultReference(reference.id);
+      }
+
+      archive.removeRef(refKey);
+      setArchiveStatus("Referencia quitada de tu archivo.");
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "No se pudo quitar la referencia.");
+    } finally {
+      setPendingRefId(null);
+    }
   };
 
   return (
@@ -219,7 +277,11 @@ function App() {
       >
         <div className="max-w-[1080px] mx-auto flex items-center justify-between px-6 md:px-12 py-4">
           <div className="flex items-center gap-[14px]">
-            <span className="font-newsreader italic text-[22px] tracking-[-0.01em]">rfrnce</span>
+            <img
+  src={`${import.meta.env.BASE_URL}references/logonegro-rfrnce.png`}
+  alt="rfrnce"
+  className="h-7 w-auto"
+/>
             <span className="w-[5px] h-[5px] rounded-full bg-rfrnce-lime" />
             <span className="hidden sm:block text-[11px] font-semibold uppercase tracking-[0.22em] text-rfrnce-gray">
               Archivo creativo
@@ -374,18 +436,26 @@ function App() {
             </div>
 
             <div className="mb-14">
-              <SupabaseReferenceManager />
+              <SupabaseReferenceManager savedReferences={savedArchiveRefs} />
             </div>
+
+            {(archiveStatus || archiveError) && (
+              <div className="mb-6 border border-rfrnce-black/10 bg-white px-5 py-3 text-[13px] shadow-card">
+                {archiveStatus && <p className="text-rfrnce-black">{archiveStatus}</p>}
+                {archiveError && <p className="text-rfrnce-gray">{archiveError}</p>}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {archiveRefs.map((ref) => (
                 <RefCard
-                  key={ref.title}
+                  key={getReferenceKey(ref)}
                   card={ref}
-                  isSaved={archive.isSaved(ref.title)}
-                  collectionName={archive.getCollectionName(ref.title)}
-                  onSave={() => archive.saveRef(ref.title)}
-                  onRemove={() => archive.removeRef(ref.title)}
+                  isSaved={archive.isSaved(getReferenceKey(ref))}
+                  collectionName={archive.getCollectionName(getReferenceKey(ref))}
+                  isBusy={pendingRefId === getReferenceKey(ref)}
+                  onSave={() => void handleSaveReference(ref)}
+                  onRemove={() => void handleRemoveReference(ref)}
                 />
               ))}
             </div>
@@ -596,17 +666,11 @@ function App() {
       <footer className="border-t border-rfrnce-black/10 bg-rfrnce-offwhite">
         <div className="max-w-[1080px] mx-auto px-6 md:px-12 py-16 flex items-end justify-between flex-wrap gap-6">
           <div>
-            <span
-              className="block mb-4"
-              style={{
-                fontFamily: "'Newsreader', serif",
-                fontSize: "22px",
-                fontStyle: "italic",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              rfrnce
-            </span>
+            <img
+  src={`${import.meta.env.BASE_URL}references/logonegro-rfrnce.png`}
+  alt="rfrnce"
+  className="h-7 w-auto mb-4"
+/>
             <p className="text-[13px] text-rfrnce-gray max-w-[36ch] leading-[1.6]">
               Guarda referencias. Añade contexto. Descubre conexiones.
             </p>

@@ -1,0 +1,90 @@
+[
+  {
+    "id": "default-image-mediterranean-sunset-001",
+    "type": "Imagen",
+    "title": "Atardecer mediterráneo",
+    "description": "Luz cálida sobre las rocas al final del día. Paleta para proyectos con carácter contemplativo.",
+    "imagePath": "/references/IMG-2327%20(2).jpg",
+    "tags": ["luz", "mar", "calma"],
+    "collection": "Paisaje y atmósfera",
+    "connections": 6,
+    "date": "12 mar 2026"
+  },
+  {
+    "id": "default-image-la-mancha-silhouettes-002",
+    "type": "Imagen",
+    "title": "Siluetas en La Mancha",
+    "description": "Molino al atardecer con siluetas de mujeres sobre la pared blanca. Iconografía visual para narración.",
+    "imagePath": "/references/IMG_7870.jpg",
+    "tags": ["silueta", "folklore", "paisaje"],
+    "collection": "Cultura española",
+    "connections": 8,
+    "date": "3 ene 2026"
+  },
+  {
+    "id": "default-image-madrid-sticker-wall-003",
+    "type": "Imagen",
+    "title": "Pared de stickers - Madrid",
+    "description": "Superposición de pegatinas como archivo urbano. Cultura visual acumulada en capas.",
+    "imagePath": "/references/IMG_4291.jpg",
+    "tags": ["street art", "collage", "urbano"],
+    "collection": "Cultura de la calle",
+    "connections": 11,
+    "date": "19 ene 2026"
+  },
+  {
+    "id": "default-image-rome-tiber-dawn-004",
+    "type": "Imagen",
+    "title": "Tíber al amanecer, Roma",
+    "description": "Escala monumental, silencio. La ciudad antes de que empiece el ruido.",
+    "imagePath": "/references/IMG_9554.jpg",
+    "tags": ["Roma", "ciudad", "luz dorada"],
+    "collection": "Ciudades europeas",
+    "connections": 5,
+    "date": "27 oct 2025"
+  },
+  {
+    "id": "default-image-malasana-yellow-facade-005",
+    "type": "Imagen",
+    "title": "Fachada amarilla, Malasaña",
+    "description": "Arquitectura de Madrid en un día nublado. Contraste de color cálido con cielo frío.",
+    "imagePath": "/references/IMG_4303.jpg",
+    "tags": ["arquitectura", "Madrid", "color"],
+    "collection": "Ciudades europeas",
+    "connections": 4,
+    "date": "11 abr 2026"
+  },
+  {
+    "id": "default-image-steinburg-identity-006",
+    "type": "Imagen",
+    "title": "Steinburg - identidad gráfica",
+    "description": "Packaging de cerveza artesana. Tipografía editorial aplicada a producto. Referencia para branding austero.",
+    "imagePath": "/references/IMG_0360.JPG",
+    "tags": ["packaging", "tipografía", "branding"],
+    "collection": "Diseño gráfico",
+    "connections": 9,
+    "date": "22 feb 2026"
+  },
+  {
+    "id": "default-image-mediterranean-cliff-007",
+    "type": "Imagen",
+    "title": "Costa mediterránea - acantilado",
+    "description": "Luz cenital sobre el Mediterráneo. Vegetación de garriga y reflejo del sol en el agua.",
+    "imagePath": "/references/IMG-2351.jpg",
+    "tags": ["paisaje", "mediterráneo", "naturaleza"],
+    "collection": "Paisaje y atmósfera",
+    "connections": 7,
+    "date": "5 mar 2026"
+  },
+  {
+    "id": "default-image-twilight-beach-008",
+    "type": "Imagen",
+    "title": "Playa al crepúsculo",
+    "description": "Arena, horizonte y agua en tonos azules. Composición mínima de tres bandas horizontales.",
+    "imagePath": "/references/DSCF1087.JPG",
+    "tags": ["playa", "minimalismo", "horizonte"],
+    "collection": "Paisaje y atmósfera",
+    "connections": 3,
+    "date": "20 sep 2025"
+  }
+]
