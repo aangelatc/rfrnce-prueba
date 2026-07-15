@@ -22,9 +22,12 @@ type ReferenceMatch = {
 
 type ConnectionResponse = {
   connections: {
-    connection_title: string;
-    why_it_connects: string;
-    creative_application: string;
+    title: string;
+    connectionType: ("visual" | "conceptual" | "narrativa" | "cultural" | "contraste")[];
+    explanation: string;
+    creativeApplication: string;
+    confidence: 1 | 2 | 3 | 4 | 5;
+    matchedCriteria: string[];
   }[];
 };
 
@@ -40,11 +43,34 @@ const connectionsSchema = {
         type: "object",
         additionalProperties: false,
         properties: {
-          connection_title: { type: "string" },
-          why_it_connects: { type: "string" },
-          creative_application: { type: "string" },
+          title: { type: "string" },
+          connectionType: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            items: {
+              type: "string",
+              enum: ["visual", "conceptual", "narrativa", "cultural", "contraste"],
+            },
+          },
+          explanation: { type: "string" },
+          creativeApplication: { type: "string" },
+          confidence: { type: "integer", minimum: 1, maximum: 5 },
+          matchedCriteria: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: { type: "string" },
+          },
         },
-        required: ["connection_title", "why_it_connects", "creative_application"],
+        required: [
+          "title",
+          "connectionType",
+          "explanation",
+          "creativeApplication",
+          "confidence",
+          "matchedCriteria",
+        ],
       },
     },
   },
@@ -114,7 +140,7 @@ ${JSON.stringify(reference, null, 2)}
 Candidatas:
 ${JSON.stringify(typedMatches, null, 2)}
 
-Cada conexion debe explicar por que conecta y una aplicacion creativa concreta para un proyecto.`,
+Cada conexion debe devolver title, connectionType, explanation, creativeApplication, confidence y matchedCriteria. No uses "mismo tipo" como explicacion principal, no justifiques solo por una palabra compartida y prioriza conexiones entre disciplinas diferentes.`,
     });
 
     return new Response(JSON.stringify(connectionResponse), {

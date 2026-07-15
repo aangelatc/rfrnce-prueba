@@ -14,8 +14,17 @@ export interface SupabaseReference {
   created_at: string;
 }
 
-export interface ConnectionCard {
-  connection_title: string;
-  why_it_connects: string;
-  creative_application: string;
+export type ConnectionType = "visual" | "conceptual" | "narrativa" | "cultural" | "contraste";
+
+export type ConfidenceLevel = 1 | 2 | 3 | 4 | 5;
+
+export interface ReferenceConnection {
+  title: string;
+  connectionType: ConnectionType[];
+  explanation: string;
+  creativeApplication: string;
+  confidence: ConfidenceLevel;
+  matchedCriteria: string[];
 }
+
+export type ConnectionCard = ReferenceConnection;

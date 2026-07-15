@@ -3,29 +3,19 @@ import type { ChangeEvent, FormEvent } from "react";
 import { archiveRefs } from "../data/references";
 import type { ReferenceCard } from "../data/references";
 import { supabase } from "../lib/supabase";
-import type { SupabaseReference } from "../types/supabaseReferences";
+import type { ReferenceConnection, SupabaseReference } from "../types/supabaseReferences";
+import {
+  dedupeConnectionReferences,
+  generateLocalConnections,
+  normalizeGenericReference,
+  normalizeUploadedReference,
+} from "../utils/connectionEngine";
 
 type FormState = {
   title: string;
   type: string;
   url: string;
   description: string;
-};
-
-type ConnectionReference = {
-  id: string;
-  source: "uploaded" | "default" | "demo";
-  title: string;
-  type: string;
-  url?: string | null;
-  imageUrl?: string | null;
-  description?: string | null;
-  ai_summary?: string | null;
-  mood?: string | null;
-  style?: string | null;
-  tags?: string[] | null;
-  collection?: string | null;
-  date?: string | null;
 };
 
 interface SupabaseReferenceManagerProps {
@@ -40,174 +30,6 @@ const initialForm: FormState = {
 };
 
 const typeOptions = ["Imagen", "Video", "Texto", "Cita", "Musica", "Libro", "Link", "Archivo"];
-
-const stopWords = new Set([
-  "a",
-  "al",
-  "algo",
-  "ante",
-  "con",
-  "como",
-  "de",
-  "del",
-  "desde",
-  "el",
-  "ella",
-  "en",
-  "entre",
-  "es",
-  "esta",
-  "este",
-  "esto",
-  "la",
-  "las",
-  "lo",
-  "los",
-  "mas",
-  "me",
-  "mi",
-  "muy",
-  "o",
-  "para",
-  "pero",
-  "por",
-  "que",
-  "se",
-  "sin",
-  "sobre",
-  "su",
-  "sus",
-  "un",
-  "una",
-  "unas",
-  "uno",
-  "unos",
-  "y",
-]);
-
-const conceptGroups = [
-  ["mirada", "ver", "visual", "imagen", "percepción", "representación", "medio", "medios"],
-  ["amor", "deseo", "romance", "intimidad", "melancolía"],
-  ["ciudad", "urbano", "calle", "arquitectura", "espacio"],
-  ["memoria", "recuerdo", "archivo", "nostalgia", "pasado"],
-  ["crítica", "sociedad", "cultura", "publicidad", "consumo", "espectáculo"],
-  ["cuerpo", "identidad", "género", "presencia", "retrato"],
-  ["sonido", "música", "canción", "ritmo", "atmósfera", "cinematográfico"],
-  ["editorial", "diseño", "tipografía", "composición", "layout"],
-  ["color", "textura", "forma", "material", "superficie"],
-];
-
-const conceptGroupLabels = [
-  "cultura visual",
-  "deseo/melancolía",
-  "ciudad/espacio",
-  "memoria",
-  "crítica cultural",
-  "identidad/cuerpo",
-  "sonido/atmósfera",
-  "diseño editorial",
-  "color/textura",
-];
-
-function normalizeKeyword(keyword: string) {
-  return keyword
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function getKeywords(text?: string | null) {
-  if (!text) return [];
-
-  return Array.from(
-    new Set(
-      normalizeKeyword(text)
-        .replace(/[.,;:!?¿¡()[\]{}"'`´]/g, " ")
-        .replace(/[^a-z0-9\s]+/g, " ")
-        .split(/\s+/)
-        .map((word) => word.trim())
-        .filter((word) => word.length > 3 && !stopWords.has(word))
-    )
-  );
-}
-
-function getReferenceKeywordText(reference: ConnectionReference, includeTags = true) {
-  return [
-    reference.title,
-    reference.description,
-    reference.ai_summary,
-    reference.style,
-    includeTags ? reference.tags?.join(" ") : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function normalizeGenericReference(reference: ReferenceCard): ConnectionReference {
-  const description =
-    reference.kind === "text"
-      ? `${reference.quote} ${reference.sourceLabel}`
-      : reference.description;
-
-  return {
-    id: reference.id,
-    source: reference.source,
-    title: reference.title,
-    type: reference.type,
-    url: reference.kind === "image" ? reference.image : null,
-    imageUrl: reference.kind === "image" ? reference.image : null,
-    description,
-    ai_summary: description,
-    mood: null,
-    style: reference.collection,
-    tags: reference.tags,
-    collection: reference.collection,
-    date: reference.date,
-  };
-}
-
-function normalizeUploadedReference(reference: SupabaseReference): ConnectionReference {
-  return {
-    ...reference,
-    source: "uploaded",
-    imageUrl: reference.type.toLowerCase() === "imagen" ? reference.url : null,
-    collection: null,
-    date: reference.created_at,
-  };
-}
-
-function dedupeConnectionReferences(connectionReferences: ConnectionReference[]) {
-  const seenIds = new Set<string>();
-  const seenTitles = new Set<string>();
-
-  return connectionReferences.filter((reference) => {
-    const normalizedTitle = normalizeKeyword(reference.title);
-
-    if (seenIds.has(reference.id) || seenTitles.has(normalizedTitle)) {
-      return false;
-    }
-
-    seenIds.add(reference.id);
-    seenTitles.add(normalizedTitle);
-    return true;
-  });
-}
-
-function getSharedConcepts(currentKeywords: string[], referenceKeywords: string[]) {
-  return conceptGroups
-    .map((group, index) => {
-      const normalizedGroup = group.map(normalizeKeyword);
-      const currentMatches = currentKeywords.filter((keyword) => normalizedGroup.includes(keyword));
-      const referenceMatches = referenceKeywords.filter((keyword) =>
-        normalizedGroup.includes(keyword)
-      );
-
-      if (currentMatches.length === 0 || referenceMatches.length === 0) return null;
-
-      return conceptGroupLabels[index] ?? group[0];
-    })
-    .filter((concept): concept is string => Boolean(concept));
-}
 
 function getFunctionUrl(functionName: string) {
   return `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`;
@@ -238,14 +60,73 @@ function ReferenceMeta({ label, value }: { label: string; value: string | null }
   );
 }
 
+function ConnectionInsightCard({ connection }: { connection: ReferenceConnection }) {
+  return (
+    <article className="rounded-sm border border-rfrnce-black/10 bg-white p-4 shadow-card">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p
+            className="text-rfrnce-black"
+            style={{
+              fontFamily: "'Newsreader', serif",
+              fontSize: "20px",
+              lineHeight: 1.18,
+              fontWeight: 300,
+            }}
+          >
+            {connection.title}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {connection.connectionType.map((type) => (
+              <span
+                key={type}
+                className="rounded-sm bg-rfrnce-lime px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-rfrnce-black"
+              >
+                {type}
+              </span>
+            ))}
+          </div>
+        </div>
+        <span className="flex-none text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-gray">
+          Confianza: {connection.confidence}/5
+        </span>
+      </div>
+
+      <p className="mt-4 text-[14px] leading-[1.6] text-rfrnce-black">
+        {connection.explanation}
+      </p>
+
+      <div className="mt-4 border-l-[3px] border-rfrnce-lime pl-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-rfrnce-gray">
+          Aplicacion creativa
+        </p>
+        <p className="mt-2 text-[13px] leading-[1.6] text-rfrnce-black">
+          {connection.creativeApplication}
+        </p>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {connection.matchedCriteria.map((criterion) => (
+          <span
+            key={criterion}
+            className="rounded-full border border-rfrnce-black/15 px-3 py-1 text-[12px] text-rfrnce-gray"
+          >
+            {criterion}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 export function SupabaseReferenceManager({
   savedReferences = [],
 }: SupabaseReferenceManagerProps) {
   const [form, setForm] = useState<FormState>(initialForm);
   const [references, setReferences] = useState<SupabaseReference[]>([]);
-  const [connectionsByReference, setConnectionsByReference] = useState<Record<string, string[]>>(
-    {}
-  );
+  const [connectionsByReference, setConnectionsByReference] = useState<
+    Record<string, ReferenceConnection[]>
+  >({});
   const [loadingReferences, setLoadingReferences] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [connectingId, setConnectingId] = useState<string | null>(null);
@@ -363,83 +244,18 @@ export function SupabaseReferenceManager({
       return;
     }
 
-    const currentExactKeywords = getKeywords(getReferenceKeywordText(currentReference, false));
-    const currentConceptKeywords = getKeywords(getReferenceKeywordText(currentReference));
-
-    const relatedReferences = allConnectionReferences
-      .filter((ref) => ref.id !== referenceId)
-      .map((ref) => {
-        const currentTags = currentReference.tags ?? [];
-        const refTags = ref.tags ?? [];
-
-        const normalizedCurrentTags = new Set(currentTags.map(normalizeKeyword));
-        const sharedTags = refTags.filter((tag) => normalizedCurrentTags.has(normalizeKeyword(tag)));
-        const sameType = ref.type === currentReference.type;
-        const sameStyle = Boolean(
-          currentReference.style &&
-            ref.style &&
-            normalizeKeyword(ref.style) === normalizeKeyword(currentReference.style)
-        );
-        const referenceExactKeywords = getKeywords(getReferenceKeywordText(ref, false));
-        const referenceConceptKeywords = getKeywords(getReferenceKeywordText(ref));
-        const sharedKeywords = currentExactKeywords.filter((keyword) =>
-          referenceExactKeywords.includes(keyword)
-        );
-        const sharedConcepts = getSharedConcepts(currentConceptKeywords, referenceConceptKeywords);
-
-        const score =
-          (sameType ? 1 : 0) +
-          (sameStyle ? 2 : 0) +
-          sharedTags.length * 2 +
-          sharedKeywords.length +
-          sharedConcepts.length * 3;
-
-        const reasons = [
-          sameType ? "mismo tipo" : "",
-          sameStyle ? "mismo estilo" : "",
-          sharedTags.length > 0 ? `etiquetas compartidas: ${sharedTags.join(", ")}` : "",
-          sharedConcepts.length > 0
-            ? `concepto compartido: ${sharedConcepts.join(", ")}`
-            : "",
-          sharedKeywords.length > 0 ? `palabras compartidas: ${sharedKeywords.join(", ")}` : "",
-        ].filter(Boolean);
-
-        return {
-          title: ref.title,
-          score,
-          hasConnection:
-            sameType ||
-            sameStyle ||
-            sharedTags.length > 0 ||
-            sharedConcepts.length > 0 ||
-            sharedKeywords.length >= 2,
-          reason: reasons.join(", "),
-        };
-      })
-      .filter((connection) => connection.score > 0 && connection.hasConnection)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
-
-    if (relatedReferences.length === 0) {
-      setConnectionsByReference((current) => ({
-        ...current,
-        [referenceId]: [
-          "No se han encontrado conexiones directas. Añade más referencias con etiquetas, tipo o estilo similares.",
-        ],
-      }));
-
-      setConnectingId(null);
-      return;
-    }
+    const relatedReferences = generateLocalConnections(referenceId, allConnectionReferences);
 
     setConnectionsByReference((current) => ({
       ...current,
-      [referenceId]: relatedReferences.map(
-        (connection) => `${connection.title} · Coincide por: ${connection.reason}`
-      ),
+      [referenceId]: relatedReferences,
     }));
 
-    setStatus("Conexiones generadas correctamente.");
+    setStatus(
+      relatedReferences.length > 0
+        ? "Conexiones generadas correctamente."
+        : "No se han encontrado conexiones con suficiente contexto."
+    );
     setConnectingId(null);
   };
 
@@ -592,40 +408,40 @@ export function SupabaseReferenceManager({
                           </div>
                         )}
                         <div>
-                        <div className="flex flex-wrap items-center gap-2 mb-3">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-lime bg-rfrnce-black px-[10px] py-1 rounded-sm">
-                            {reference.type}
-                          </span>
-                          <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
-                            {sourceLabel}
-                          </span>
-                          {reference.mood && (
-                            <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
-                              {reference.mood}
+                          <div className="flex flex-wrap items-center gap-2 mb-3">
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-lime bg-rfrnce-black px-[10px] py-1 rounded-sm">
+                              {reference.type}
                             </span>
-                          )}
-                        </div>
-                        <h3
-                          className="text-rfrnce-black"
-                          style={{
-                            fontFamily: "'Newsreader', serif",
-                            fontSize: "26px",
-                            lineHeight: 1.15,
-                            fontWeight: 300,
-                          }}
-                        >
-                          {reference.title}
-                        </h3>
-                        {reference.url && (
-                          <a
-                            href={reference.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-2 block max-w-[42ch] truncate text-[12px] text-rfrnce-gray hover:text-rfrnce-black"
+                            <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
+                              {sourceLabel}
+                            </span>
+                            {reference.mood && (
+                              <span className="text-[12px] text-rfrnce-gray border border-rfrnce-black/15 px-3 py-1 rounded-full">
+                                {reference.mood}
+                              </span>
+                            )}
+                          </div>
+                          <h3
+                            className="text-rfrnce-black"
+                            style={{
+                              fontFamily: "'Newsreader', serif",
+                              fontSize: "26px",
+                              lineHeight: 1.15,
+                              fontWeight: 300,
+                            }}
                           >
-                            {reference.url}
-                          </a>
-                        )}
+                            {reference.title}
+                          </h3>
+                          {reference.url && (
+                            <a
+                              href={reference.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-2 block max-w-[42ch] truncate text-[12px] text-rfrnce-gray hover:text-rfrnce-black"
+                            >
+                              {reference.url}
+                            </a>
+                          )}
                         </div>
                       </div>
 
@@ -638,27 +454,16 @@ export function SupabaseReferenceManager({
                         >
                           {connectingId === reference.id ? "Buscando..." : "Encontrar conexiones IA"}
                         </button>
-
-                        {connections.length > 0 && (
-                          <div className="mt-4 rounded-2xl border border-[#606060]/20 bg-[#f2f4ff] p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#606060]">
-                              Conexiones encontradas
-                            </p>
-
-                            <ul className="mt-3 space-y-2">
-                              {connections.map((connection) => (
-                                <li
-                                  key={connection}
-                                  className="rounded-xl bg-white px-3 py-2 text-sm text-[#201f21]"
-                                >
-                                  {connection}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
                       </div>
                     </div>
+
+                    {connections.length > 0 && (
+                      <div className="mt-5 grid gap-3">
+                        {connections.map((connection) => (
+                          <ConnectionInsightCard key={connection.title} connection={connection} />
+                        ))}
+                      </div>
+                    )}
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
                       <ReferenceMeta label="Resumen IA" value={reference.ai_summary ?? null} />
@@ -697,8 +502,8 @@ export function SupabaseReferenceManager({
           </div>
 
           {generatedConnectionEntries.length === 0 ? (
-            <div className="rounded-2xl border border-[#606060]/20 bg-[#f2f4ff] p-5 text-sm text-[#606060]">
-              Todavía no hay conexiones generadas. Pulsa “Encontrar conexiones IA” en alguna
+            <div className="rounded-sm border border-[#606060]/20 bg-rfrnce-offwhite p-5 text-sm text-[#606060]">
+              Todavia no hay conexiones generadas. Pulsa "Encontrar conexiones IA" en alguna
               referencia para construir tu mapa.
             </div>
           ) : (
@@ -709,7 +514,7 @@ export function SupabaseReferenceManager({
                 return (
                   <article
                     key={referenceId}
-                    className="rounded-2xl border border-[#606060]/20 bg-white p-5"
+                    className="rounded-sm border border-[#606060]/20 bg-white p-5"
                   >
                     <div className="mb-4 flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-[#89f336]" />
@@ -719,19 +524,20 @@ export function SupabaseReferenceManager({
                     </div>
 
                     <h4 className="text-lg font-semibold text-[#201f21]">
-                      {sourceReference?.title ?? "Referencia sin título"}
+                      {sourceReference?.title ?? "Referencia sin titulo"}
                     </h4>
 
-                    <ul className="mt-4 space-y-2">
-                      {connections.map((connection) => (
-                        <li
-                          key={connection}
-                          className="rounded-xl bg-[#f2f4ff] px-4 py-3 text-sm text-[#201f21]"
-                        >
-                          {connection}
-                        </li>
-                      ))}
-                    </ul>
+                    {connections.length === 0 ? (
+                      <p className="mt-4 rounded-sm bg-rfrnce-offwhite px-4 py-3 text-sm text-[#606060]">
+                        No hay suficiente informacion para generar una conexion fiable.
+                      </p>
+                    ) : (
+                      <div className="mt-4 grid gap-3">
+                        {connections.map((connection) => (
+                          <ConnectionInsightCard key={connection.title} connection={connection} />
+                        ))}
+                      </div>
+                    )}
                   </article>
                 );
               })}

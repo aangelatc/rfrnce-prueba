@@ -14,6 +14,22 @@ const edgeFunction = readFileSync(
   join(process.cwd(), "supabase/functions/default-reference-collection/index.ts"),
   "utf8"
 );
+const connectionEngine = readFileSync(
+  join(process.cwd(), "src/utils/connectionEngine.ts"),
+  "utf8"
+);
+const demoConnections = readFileSync(
+  join(process.cwd(), "src/data/demoConnections.ts"),
+  "utf8"
+);
+const supabaseReferenceManager = readFileSync(
+  join(process.cwd(), "src/components/SupabaseReferenceManager.tsx"),
+  "utf8"
+);
+const generateConnectionsFunction = readFileSync(
+  join(process.cwd(), "supabase/functions/generate-connections/index.ts"),
+  "utf8"
+);
 
 function createCollectionStore() {
   const rows = new Map();
@@ -154,5 +170,37 @@ describe("default reference collection behavior", () => {
 
     assert.equal(store.remove("user-b", catalog[0].id), false);
     assert.equal(store.list("user-a").length, 1);
+  });
+});
+
+describe("local connection cards", () => {
+  it("declares the richer connection card contract", () => {
+    for (const field of [
+      "title",
+      "connectionType",
+      "explanation",
+      "creativeApplication",
+      "confidence",
+      "matchedCriteria",
+    ]) {
+      assert.match(connectionEngine, new RegExp(field));
+      assert.match(generateConnectionsFunction, new RegExp(field));
+    }
+  });
+
+  it("includes the requested A Bigger Splash / Jacquemus complete demo connection", () => {
+    assert.match(demoConnections, /demo-case-a-bigger-splash/);
+    assert.match(demoConnections, /demo-case-jacquemus-le-splash/);
+    assert.match(demoConnections, /Campaña Jacquemus Le Splash/);
+    assert.match(demoConnections, /color saturado/);
+    assert.match(demoConnections, /confidence:\s*4/);
+  });
+
+  it("renders structured connection cards instead of technical string reasons", () => {
+    assert.match(supabaseReferenceManager, /ConnectionInsightCard/);
+    assert.match(supabaseReferenceManager, /Aplicacion creativa/);
+    assert.match(supabaseReferenceManager, /Confianza:/);
+    assert.doesNotMatch(supabaseReferenceManager, /Coincide por/);
+    assert.doesNotMatch(supabaseReferenceManager, /palabras compartidas/);
   });
 });
