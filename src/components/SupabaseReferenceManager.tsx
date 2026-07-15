@@ -3,10 +3,16 @@ import type { ChangeEvent, FormEvent } from "react";
 import { archiveRefs } from "../data/references";
 import type { ReferenceCard } from "../data/references";
 import { supabase } from "../lib/supabase";
-import type { ReferenceConnection, SupabaseReference } from "../types/supabaseReferences";
+import type {
+  AiReferenceConnection,
+  FindConnectionReference,
+  FindConnectionsRequest,
+  FindConnectionsResponse,
+  SupabaseReference,
+} from "../types/supabaseReferences";
 import {
   dedupeConnectionReferences,
-  generateLocalConnections,
+  type ConnectionReference,
   normalizeGenericReference,
   normalizeUploadedReference,
 } from "../utils/connectionEngine";
@@ -60,7 +66,49 @@ function ReferenceMeta({ label, value }: { label: string; value: string | null }
   );
 }
 
-function ConnectionInsightCard({ connection }: { connection: ReferenceConnection }) {
+function toFindConnectionReference(reference: ConnectionReference): FindConnectionReference {
+  return {
+    id: reference.id,
+    title: reference.title,
+    description: reference.description ?? reference.ai_summary ?? "",
+    category: reference.type,
+    tags: reference.tags ?? [],
+    imageUrl: reference.imageUrl ?? "",
+  };
+}
+
+async function readFunctionErrorDetails(error: unknown) {
+  const context = (error as { context?: unknown } | null)?.context;
+
+  if (context instanceof Response) {
+    const body = await context.text().catch(() => "");
+    return {
+      status: context.status,
+      body,
+    };
+  }
+
+  return {
+    status: null,
+    body: error instanceof Error ? error.message : String(error),
+  };
+}
+
+function getErrorMessageFromBody(body: string) {
+  if (!body) return "";
+
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
+    if (typeof parsed.error === "string") return parsed.error;
+    if (typeof parsed.message === "string") return parsed.message;
+  } catch {
+    return body;
+  }
+
+  return "";
+}
+
+function ConnectionInsightCard({ connection }: { connection: AiReferenceConnection }) {
   return (
     <article className="rounded-sm border border-rfrnce-black/10 bg-white p-4 shadow-card">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -74,17 +122,12 @@ function ConnectionInsightCard({ connection }: { connection: ReferenceConnection
               fontWeight: 300,
             }}
           >
-            {connection.title}
+            {connection.referenceTitle}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {connection.connectionType.map((type) => (
-              <span
-                key={type}
-                className="rounded-sm bg-rfrnce-lime px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-rfrnce-black"
-              >
-                {type}
-              </span>
-            ))}
+            <span className="rounded-sm bg-rfrnce-lime px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-rfrnce-black">
+              {connection.connectionType}
+            </span>
           </div>
         </div>
         <span className="flex-none text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-gray">
@@ -104,17 +147,6 @@ function ConnectionInsightCard({ connection }: { connection: ReferenceConnection
           {connection.creativeApplication}
         </p>
       </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {connection.matchedCriteria.map((criterion) => (
-          <span
-            key={criterion}
-            className="rounded-full border border-rfrnce-black/15 px-3 py-1 text-[12px] text-rfrnce-gray"
-          >
-            {criterion}
-          </span>
-        ))}
-      </div>
     </article>
   );
 }
@@ -125,7 +157,7 @@ export function SupabaseReferenceManager({
   const [form, setForm] = useState<FormState>(initialForm);
   const [references, setReferences] = useState<SupabaseReference[]>([]);
   const [connectionsByReference, setConnectionsByReference] = useState<
-    Record<string, ReferenceConnection[]>
+    Record<string, AiReferenceConnection[]>
   >({});
   const [loadingReferences, setLoadingReferences] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -231,7 +263,7 @@ export function SupabaseReferenceManager({
     }
   };
 
-  const handleGenerateConnections = (referenceId: string) => {
+  const handleGenerateConnections = async (referenceId: string) => {
     setConnectingId(referenceId);
     setStatus(null);
     setError(null);
@@ -244,19 +276,58 @@ export function SupabaseReferenceManager({
       return;
     }
 
-    const relatedReferences = generateLocalConnections(referenceId, allConnectionReferences);
+    const candidateReferences = allConnectionReferences.filter((ref) => ref.id !== referenceId);
 
-    setConnectionsByReference((current) => ({
-      ...current,
-      [referenceId]: relatedReferences,
-    }));
+    if (candidateReferences.length === 0) {
+      setError("Necesitas al menos otra referencia disponible para encontrar una conexion.");
+      setConnectingId(null);
+      return;
+    }
 
-    setStatus(
-      relatedReferences.length > 0
-        ? "Conexiones generadas correctamente."
-        : "No se han encontrado conexiones con suficiente contexto."
-    );
-    setConnectingId(null);
+    const requestBody: FindConnectionsRequest = {
+      sourceReference: toFindConnectionReference(currentReference),
+      candidateReferences: candidateReferences.map(toFindConnectionReference),
+    };
+
+    try {
+      const { data, error: invokeError } =
+        await supabase.functions.invoke<FindConnectionsResponse>("find-connections", {
+          body: requestBody,
+        });
+
+      if (invokeError) {
+        const details = await readFunctionErrorDetails(invokeError);
+        console.error("find-connections failed", details);
+
+        const detailedMessage = getErrorMessageFromBody(details.body);
+        throw new Error(
+          detailedMessage ||
+            (details.status
+              ? `La funcion find-connections ha fallado con estado ${details.status}.`
+              : "No se pudo generar la conexion con IA.")
+        );
+      }
+
+      if (!data?.connection) {
+        console.error("find-connections returned an invalid body", { status: 200, body: data });
+        throw new Error("La funcion no devolvio una conexion valida.");
+      }
+
+      setConnectionsByReference((current) => ({
+        ...current,
+        [referenceId]: [data.connection],
+      }));
+
+      setStatus("Conexion IA generada correctamente.");
+    } catch (connectionError) {
+      setError(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "No se pudo generar la conexion con IA."
+      );
+    } finally {
+      setConnectingId(null);
+    }
   };
 
   const generatedConnectionEntries = Object.entries(connectionsByReference);
@@ -448,8 +519,8 @@ export function SupabaseReferenceManager({
                       <div className="flex-none md:max-w-[320px]">
                         <button
                           type="button"
-                          onClick={() => handleGenerateConnections(reference.id)}
-                          disabled={connectingId === reference.id}
+                          onClick={() => void handleGenerateConnections(reference.id)}
+                          disabled={connectingId !== null}
                           className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rfrnce-black"
                         >
                           {connectingId === reference.id ? "Buscando..." : "Encontrar conexiones IA"}
@@ -460,7 +531,10 @@ export function SupabaseReferenceManager({
                     {connections.length > 0 && (
                       <div className="mt-5 grid gap-3">
                         {connections.map((connection) => (
-                          <ConnectionInsightCard key={connection.title} connection={connection} />
+                          <ConnectionInsightCard
+                            key={connection.referenceId}
+                            connection={connection}
+                          />
                         ))}
                       </div>
                     )}
@@ -534,7 +608,10 @@ export function SupabaseReferenceManager({
                     ) : (
                       <div className="mt-4 grid gap-3">
                         {connections.map((connection) => (
-                          <ConnectionInsightCard key={connection.title} connection={connection} />
+                          <ConnectionInsightCard
+                            key={connection.referenceId}
+                            connection={connection}
+                          />
                         ))}
                       </div>
                     )}

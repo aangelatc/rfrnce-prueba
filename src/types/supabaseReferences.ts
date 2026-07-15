@@ -28,3 +28,30 @@ export interface ReferenceConnection {
 }
 
 export type ConnectionCard = ReferenceConnection;
+
+export interface FindConnectionReference {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  tags: string[];
+  imageUrl: string;
+}
+
+export interface AiReferenceConnection {
+  referenceId: string;
+  referenceTitle: string;
+  connectionType: ConnectionType;
+  explanation: string;
+  creativeApplication: string;
+  confidence: ConfidenceLevel;
+}
+
+export interface FindConnectionsRequest {
+  sourceReference: FindConnectionReference;
+  candidateReferences: FindConnectionReference[];
+}
+
+export interface FindConnectionsResponse {
+  connection: AiReferenceConnection;
+}

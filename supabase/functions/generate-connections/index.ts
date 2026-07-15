@@ -148,7 +148,12 @@ Cada conexion debe devolver title, connectionType, explanation, creativeApplicat
     });
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Unexpected error." }),
+      JSON.stringify({
+        error:
+          error instanceof Error
+            ? error.message
+            : "generate-connections failed with a non-Error value.",
+      }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
